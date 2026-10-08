@@ -1,6 +1,6 @@
 # Змейка — кроссплатформенная ретро-игра
 
-Семестровый проект по курсу РКПС.
+Семестровый проект по курсу «Архитектура вычислительных систем».
 Классическая «Змейка» с низкоуровневым ядром на **C** и платформо-независимой
 игровой логикой на **Lua**.
 
@@ -58,74 +58,134 @@
 
 ---
 
+## Быстрый старт
+
+Все платформы поддерживают единый интерфейс через `make`:
+
+```bash
+make setup      # подготовка окружения (скачать minilua.h)
+make build      # собрать игру и тесты
+make test       # прогнать тесты
+make run        # запустить игру
+```
+
+Первая сборка на чистом клоне:
+
+```bash
+git clone <repo-url> snake-project
+cd snake-project
+make deps       # установить системные зависимости (Linux/WSL)
+make build
+make run
+```
+
+Вся конфигурация проекта вынесена в `config.mk`: пути, имена пакетов,
+URL для `minilua.h`, каталоги сборки, список алиасов.
+
+---
+
 ## Требования
 
 - GCC или Clang с поддержкой C11
 - CMake ≥ 3.20
+- GNU Make
 - SDL2
+- curl (для скачивания `minilua.h`)
 - Python 3 (для локального запуска Web-версии)
 - Emscripten (опционально, для сборки под Web)
 
 ### Установка на WSL / Ubuntu / Debian
 
+Автоматически одной командой:
+
+```bash
+make deps
+```
+
+Вручную — если `make` ещё не установлен:
+
 ```bash
 sudo apt update
 sudo apt install build-essential cmake git \
-                 libsdl2-dev pkg-config
+                 libsdl2-dev pkg-config curl
 ```
 
-### Установка на Windows (MSYS2 + MinGW)
+Для фаззинга дополнительно:
+
+```bash
+sudo apt install clang llvm
+```
+
+### Установка на Windows (MSYS2 + MinGW64)
+
+Откройте оболочку **MSYS2 MINGW64** и установите пакеты:
 
 ```bash
 pacman -S mingw-w64-x86_64-gcc \
           mingw-w64-x86_64-cmake \
+          mingw-w64-x86_64-make \
           mingw-w64-x86_64-SDL2 \
+          mingw-w64-x86_64-pkg-config \
           make
 ```
+
+`make deps` на Windows не устанавливает пакеты автоматически — она лишь
+печатает список необходимых. Установка через `pacman` выполняется вручную.
 
 ### Установка Emscripten
 
 ```bash
-git clone https://github.com/emscripten-core/emsdk.git
-cd emsdk
+git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+cd ~/emsdk
 ./emsdk install latest
 ./emsdk activate latest
-source ./emsdk_env.sh
+```
+
+Инициализацию `emsdk_env.sh` выполнять вручную не нужно — цель `make web`
+загружает окружение автоматически.
+
+---
+
+## Команды Makefile
+
+| Команда          | Что делает                                              |
+|------------------|---------------------------------------------------------|
+| `make help`      | Справка по всем целям                                   |
+| `make info`      | Показать текущую конфигурацию                           |
+| `make setup`     | Скачать `minilua.h`, проверить CMake                    |
+| `make deps`      | Установить системные зависимости (Linux / WSL)          |
+| `make build`     | Собрать игру и тесты                                    |
+| `make test`      | Прогнать все тесты через CTest                          |
+| `make run`       | Запустить игру                                          |
+| `make asan`      | Сборка с AddressSanitizer + UBSan и прогон тестов       |
+| `make fuzz`      | Короткий прогон фаззинга (30 сек на цель)               |
+| `make web`       | Сборка под WebAssembly через Emscripten                 |
+| `make web-serve` | Локальный HTTP-сервер для Web-сборки на порту 8000      |
+| `make clean`     | Удалить каталоги сборки                                 |
+| `make distclean` | `clean` + удалить `third_party/minilua.h`               |
+
+Переопределение параметров «на лету»:
+
+```bash
+make build CMAKE_BUILD_TYPE=Debug
+make test  CMAKE_BUILD_TYPE=Debug
+make fuzz  FUZZ_TIME=120
+make web   EMSDK_DIR=/opt/emsdk
 ```
 
 ---
 
-## Подготовка репозитория
-
-Перед первой сборкой нужно скачать `minilua.h` — однофайловую сборку Lua,
-которая используется как скриптовый движок.
-
-```bash
-mkdir -p third_party
-curl -L -o third_party/minilua.h \
-  https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
-```
-
-Проверьте, что файл скачался:
-
-```bash
-wc -c third_party/minilua.h     # ожидается ~900 000 байт
-```
-
----
-
-## Сборка и запуск
+## Сборка и запуск по платформам
 
 ### Linux / WSL
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAKE_BUILD_TESTS=ON
-cmake --build build -j$(nproc)
-./build/snake
+make deps       # один раз: установит apt-пакеты
+make setup      # скачает minilua.h (если ещё не скачан)
+make build
+make test
+make run
 ```
-
-Скрипты из `scripts/` автоматически копируются рядом с бинарником
-при сборке, отдельно ничего копировать не нужно.
 
 Если окно не открывается, проверьте переменную окружения `DISPLAY`:
 
@@ -133,37 +193,43 @@ cmake --build build -j$(nproc)
 echo $DISPLAY      # должно быть что-то вроде :0 или :1
 ```
 
-На Windows 11 с WSL2 работает WSLg — окно откроется сразу. На Windows 10
-потребуется X-сервер (VcXsrv, X410) и переменная `DISPLAY`:
+На Windows 11 с WSL2 работает WSLg — окно откроется сразу.
+На Windows 10 потребуется X-сервер (VcXsrv, X410):
 
 ```bash
 export DISPLAY=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}'):0
+make run
 ```
 
-### Windows (MSYS2 + MinGW)
+### Windows (MSYS2 + MinGW64)
+
+Убедитесь, что запущена оболочка **MSYS2 MINGW64** (не MSYS, не UCRT64).
+Пакеты ставятся через `pacman` (см. раздел «Установка» выше), затем:
 
 ```bash
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-./build/snake.exe
+make build
+make test
+make run
 ```
 
-Требуется, чтобы в `PATH` находились `mingw32-make`, `gcc` и `SDL2.dll`.
-Обычно `SDL2.dll` лежит в `C:\msys64\mingw64\bin\` — скопируйте её рядом
-с `snake.exe` или добавьте каталог в `PATH`.
+Требуется, чтобы `SDL2.dll` была доступна в `PATH`. Обычно она лежит в
+`C:\msys64\mingw64\bin\` — эта папка уже в `PATH` при активном MINGW64.
 
 ### Web (Emscripten)
 
 ```bash
-emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
-cmake --build build-web -j$(nproc)
-
-# Запуск локального HTTP-сервера
-python3 -m http.server -d build-web 8000
+make web            # соберёт build-web/snake.html
+make web-serve      # запустит сервер на http://localhost:8000
 ```
 
 Откройте в браузере <http://localhost:8000/snake.html>.
 Веб-версия поддерживает клавиатуру и касания (для мобильных устройств).
+
+Если `emsdk` установлен в нестандартное место:
+
+```bash
+make web EMSDK_DIR=/opt/emsdk
+```
 
 ---
 
@@ -184,8 +250,7 @@ python3 -m http.server -d build-web 8000
 ### Быстрый прогон всех тестов
 
 ```bash
-cd build
-ctest --output-on-failure
+make test
 ```
 
 Ожидаемый результат:
@@ -223,32 +288,25 @@ ctest --output-on-failure
 
 ### Сборка с санитайзерами
 
-Для отлова утечек памяти и неопределённого поведения:
-
 ```bash
-CC=clang cmake -S . -B build-asan \
-    -DCMAKE_BUILD_TYPE=Debug \
-    -DSNAKE_BUILD_TESTS=ON \
-    -DSNAKE_ENABLE_ASAN=ON
-cmake --build build-asan -j$(nproc)
-(cd build-asan && ctest --output-on-failure)
+make asan
 ```
+
+Цель собирает проект в `build-asan/` с Clang и флагами
+`-fsanitize=address,undefined`, после чего автоматически прогоняет тесты.
 
 ### Фаззинг (опционально)
 
-Требуется Clang с libFuzzer. Проверяет устойчивость загрузчика Lua-скриптов
-и парсера входных событий к произвольным данным.
+Требуется Clang с libFuzzer.
 
 ```bash
-CC=clang cmake -S . -B build-fuzz \
-    -DSNAKE_BUILD_FUZZ=ON \
-    -DSNAKE_BUILD_TESTS=OFF \
-    -DCMAKE_C_COMPILER=clang
-cmake --build build-fuzz -j$(nproc)
-
-./build-fuzz/fuzz_script_load  -max_total_time=60
-./build-fuzz/fuzz_input_parser -max_total_time=60
+make fuzz                 # 30 секунд на каждую цель
+make fuzz FUZZ_TIME=120   # 2 минуты на каждую цель
 ```
+
+Цель собирает `fuzz_script_load` (устойчивость загрузчика Lua-скриптов
+к произвольным данным) и `fuzz_input_parser` (устойчивость очереди
+событий к произвольному потоку байтов).
 
 ---
 
@@ -281,10 +339,12 @@ cmake --build build-fuzz -j$(nproc)
 │   ├── integration/       # Интеграционные и property-based тесты на Lua
 │   └── fuzz/              # Цели для фаззинга
 ├── third_party/
-│   └── minilua.h          # Однофайловая сборка Lua (скачивается отдельно)
+│   └── minilua.h          # Однофайловая сборка Lua (скачивается make setup)
 ├── .github/workflows/
 │   └── ci.yml             # CI: Linux + Windows + ASan + фаззинг
-├── CMakeLists.txt
+├── CMakeLists.txt         # CMake-описание сборки
+├── Makefile               # Единая точка входа с алиасами
+├── config.mk              # Конфигурация: пути, пакеты, флаги
 └── README.md
 ```
 
@@ -293,7 +353,8 @@ cmake --build build-fuzz -j$(nproc)
 ## Очистка
 
 ```bash
-rm -rf build build-asan build-fuzz build-web
+make clean        # удалить каталоги build/, build-asan/, build-fuzz/, build-web/
+make distclean    # make clean + удалить third_party/minilua.h
 ```
 
 ---
