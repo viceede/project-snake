@@ -1,11 +1,15 @@
 /*
  * platform_win.c — бэкенд SDL2 для Windows (MinGW).
+ *
  * Отличия от Linux-бэкенда:
- *  - подключаем <SDL.h> (без префикса SDL2/);
- *  - используем SDL_main вместо main (SDL2main уже делает это за нас).
+ *  - заголовок SDL подключается как <SDL2/SDL.h>, потому что
+ *    MSYS2 кладёт его в include/SDL2/;
+ *  - точка входа — main(), которая в MinGW автоматически
+ *    вызывается из WinMain;
+ *  - CMAKE передаёт пути к SDL2 через find_package(SDL2 CONFIG).
  */
 
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include "core.h"

@@ -90,9 +90,30 @@ if(EMSCRIPTEN)
 
 elseif(WIN32)
     message(STATUS "Сборка под Windows (MinGW)")
+
+    # Ищем SDL2 через конфиг-модуль (MSYS2 поставляет SDL2Config.cmake
+    # в mingw-w64-x86_64-SDL2). Если не нашли — падаем с понятным
+    # сообщением, а не с невнятным «SDL.h: No such file or directory».
+    find_package(SDL2 CONFIG QUIET)
+
+    if(NOT SDL2_FOUND)
+        message(FATAL_ERROR
+            "SDL2 не найден. Установите mingw-w64-x86_64-SDL2 "
+            "или задайте SDL2_DIR=/path/to/SDL2Config.cmake.")
+    endif()
+
+    message(STATUS "SDL2 include dirs: ${SDL2_INCLUDE_DIRS}")
+    message(STATUS "SDL2 libraries:    ${SDL2_LIBRARIES}")
+
     add_executable(snake platforms/windows/platform_win.c)
-    target_include_directories(snake PRIVATE core/include)
-    target_link_libraries(snake PRIVATE snake_core mingw32 SDL2main SDL2)
+    target_include_directories(snake PRIVATE
+        core/include
+        ${SDL2_INCLUDE_DIRS}
+    )
+    target_link_libraries(snake PRIVATE
+        snake_core
+        ${SDL2_LIBRARIES}
+    )
     target_compile_options(snake PRIVATE ${SNAKE_WARN_FLAGS})
 
 else()

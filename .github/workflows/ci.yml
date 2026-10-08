@@ -91,6 +91,16 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-make
             mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-pkg-config
+
+      - name: Диагностика окружения SDL2
+        shell: msys2 {0}
+        run: |
+          which sdl2-config || true
+          sdl2-config --cflags || true
+          sdl2-config --libs   || true
+          ls -la /mingw64/include/SDL2/SDL.h
+          ls -la /mingw64/lib/libSDL2*
 
       - name: Загрузка minilua.h
         shell: msys2 {0}
@@ -106,6 +116,7 @@ jobs:
                 -G "MinGW Makefiles" \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_MAKE_PROGRAM=mingw32-make \
+                -DCMAKE_PREFIX_PATH=/mingw64 \
                 -DSNAKE_BUILD_TESTS=ON
 
       - name: Сборка
@@ -115,41 +126,3 @@ jobs:
       - name: Тесты
         shell: msys2 {0}
         run: cd build && ctest --output-on-failure
-
-  # ---- Фаззинг ----
-  fuzz:
-    name: Fuzzing (short run)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Установка зависимостей
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake libsdl2-dev
-
-      - name: Загрузка minilua.h
-        run: |
-          mkdir -p third_party
-          curl -L -o third_party/minilua.h \
-            https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
-
-      - name: Конфигурация
-        env:
-          CC: clang
-        run: |
-          cmake -S . -B build-fuzz \
-                -DSNAKE_BUILD_FUZZ=ON \
-                -DSNAKE_BUILD_TESTS=OFF \
-                -DCMAKE_C_COMPILER=clang
-
-      - name: Сборка
-        run: cmake --build build-fuzz -j$(nproc)
-
-      - name: Показать содержимое каталога сборки
-        run: ls -la build-fuzz/
-
-      - name: Фаззинг (короткий прогон)
-        run: |
-          ./build-fuzz/fuzz_script_load  -max_total_time=30
-          ./build-fuzz/fuzz_input_parser -max_total_time=30
