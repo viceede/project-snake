@@ -1,5 +1,8 @@
 # Каталоги сборки
 build/
+build-asan/
+build-fuzz/
+build-web/
 build-*/
 cmake-build-*/
 out/
@@ -48,3 +51,6 @@ coverage/
 tmp/
 *.log
 *.tmp
+
+# Скачанные сторонние зависимости
+third_party/minilua.h
