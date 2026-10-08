@@ -1,0 +1,177 @@
+# ============================================================
+# release.yml — автоматическая публикация релизов на GitHub.
+#
+# Срабатывает при пуше тега вида v* (например, v1.0.0).
+# Собирает snake под Linux (Ubuntu) и Windows (MSYS2/MinGW),
+# затем прикрепляет бинарники к GitHub Release.
+#
+# Что видит игрок:
+#   Releases → Snake v1.0.0 → Assets:
+#     snake-linux-x86_64
+#     snake-windows-x86_64.exe
+# ============================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # нужно для публикации релиза и загрузки ассетов
+
+jobs:
+  # ----------------------------------------------------------
+  # Сборка под Linux (Ubuntu)
+  # ----------------------------------------------------------
+  build-linux:
+    name: Build Linux binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка зависимостей
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake \
+            libsdl2-dev libsdl2-ttf-dev \
+            curl
+
+      - name: Загрузка minilua.h
+        run: |
+          mkdir -p third_party
+          curl -L -o third_party/minilua.h \
+            https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
+
+      - name: Конфигурация и сборка
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSNAKE_BUILD_TESTS=OFF
+          cmake --build build -j$(nproc)
+
+      - name: Подготовка артефакта
+        run: |
+          mkdir -p dist
+          cp build/snake dist/snake-linux-x86_64
+          # Копируем скрипты рядом — игра ищет их во время запуска
+          cp -r scripts dist/scripts
+
+      - name: Упаковка в tar.gz
+        run: |
+          cd dist
+          tar czf snake-linux-x86_64.tar.gz \
+              snake-linux-x86_64 scripts
+
+      - name: Загрузка артефакта
+        uses: actions/upload-artifact@v4
+        with:
+          name: snake-linux
+          path: dist/snake-linux-x86_64.tar.gz
+
+  # ----------------------------------------------------------
+  # Сборка под Windows (MSYS2 + MinGW64)
+  # ----------------------------------------------------------
+  build-windows:
+    name: Build Windows binary
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-pkg-config
+            curl
+
+      - name: Загрузка minilua.h
+        run: |
+          mkdir -p third_party
+          curl -L -o third_party/minilua.h \
+            https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
+
+      - name: Конфигурация и сборка
+        run: |
+          cmake -S . -B build \
+            -G "MinGW Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_MAKE_PROGRAM=mingw32-make \
+            -DCMAKE_PREFIX_PATH=/mingw64 \
+            -DSNAKE_BUILD_TESTS=OFF
+          cmake --build build -j
+
+      - name: Подготовка артефакта
+        run: |
+          mkdir -p dist
+          cp build/snake.exe dist/snake-windows-x86_64.exe
+          cp -r scripts dist/scripts
+          # Копируем SDL2.dll — без неё игра не запустится
+          cp /mingw64/bin/SDL2.dll dist/ || true
+
+      - name: Упаковка в ZIP
+        run: |
+          cd dist
+          7z a snake-windows-x86_64.zip \
+             snake-windows-x86_64.exe SDL2.dll scripts
+
+      - name: Загрузка артефакта
+        uses: actions/upload-artifact@v4
+        with:
+          name: snake-windows
+          path: dist/snake-windows-x86_64.zip
+
+  # ----------------------------------------------------------
+  # Создание релиза и прикрепление бинарников
+  # ----------------------------------------------------------
+  release:
+    name: Publish release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Скачивание артефактов
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Показать содержимое dist/
+        run: ls -laR dist/
+
+      - name: Создание релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Snake ${{ github.ref_name }}"
+          body: |
+            ## Snake ${{ github.ref_name }}
+
+            Кроссплатформенная ретро-игра «Змейка».
+            Ядро на C, игровая логика на Lua, графика SDL2.
+
+            ### Управление
+
+            | Клавиша | Действие |
+            |---------|----------|
+            | R | Начать игру / перезапустить после Game Over |
+            | Стрелки | Движение |
+            | W A S D | Альтернативное управление |
+            | Пробел | Пауза |
+            | Esc | Выход |
+
+            ### Как запустить
+
+            **Linux:**
+            ```bash
+            tar xzf snake-linux-x86_64.tar.gz
+            cd dist && ./snake-linux-x86_64
