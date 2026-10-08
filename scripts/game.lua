@@ -7,18 +7,24 @@ local Game = {}
 Game.__index = Game
 
 -- Константы состояний
-local STATE_PLAYING  = "playing"
-local STATE_PAUSED   = "paused"
+local STATE_MENU      = "menu"
+local STATE_PLAYING   = "playing"
+local STATE_PAUSED    = "paused"
 local STATE_GAME_OVER = "game_over"
 
 function Game.new(w, h)
     local self = setmetatable({}, Game)
     self.board_w = w
     self.board_h = h
-    self:reset()
+    self.tick_interval = 0.15
+    self:reset()              -- готовит playing-состояние
+    self.state = STATE_MENU   -- ...и сразу переводим в меню
     return self
 end
 
+-- Инициализация игрового состояния. Используется и при старте,
+-- и при перезапуске. Не трогает tick_interval — это параметр
+-- скорости, который не зависит от текущей партии.
 function Game:reset()
     self.board = Board.new(self.board_w, self.board_h)
     self.snake = Snake.new(math.floor(self.board_w / 2),
@@ -28,8 +34,11 @@ function Game:reset()
     self.score = 0
     self.state = STATE_PLAYING
     self.timer = 0
-    self.tick_interval = 0.15
     self:spawn_food()
+end
+
+function Game:start()
+    self:reset()
 end
 
 function Game:toggle_pause()
@@ -50,6 +59,8 @@ function Game:spawn_food()
 end
 
 function Game:set_direction(ev_type)
+    if self.state ~= STATE_PLAYING then return end
+
     local d
     if ev_type == EV_UP    then d = {x = 0, y = -1}
     elseif ev_type == EV_DOWN  then d = {x = 0, y = 1}
@@ -58,8 +69,6 @@ function Game:set_direction(ev_type)
     end
     if not d then return end
 
-    -- Запрет разворота на 180°: новое направление не должно
-    -- быть противоположно текущему.
     if d.x == -self.dir.x and d.y == -self.dir.y then
         return
     end
@@ -73,21 +82,17 @@ function Game:update(dt)
     if self.timer < self.tick_interval then return end
     self.timer = 0
 
-    -- Применяем отложенное направление
     self.dir = self.next_dir
 
-    -- Новая позиция головы
     local hx = self.snake:head_x() + self.dir.x
     local hy = self.snake:head_y() + self.dir.y
 
-    -- Столкновение со стеной
     if hx < 0 or hx >= self.board_w or
        hy < 0 or hy >= self.board_h then
         self.state = STATE_GAME_OVER
         return
     end
 
-    -- Столкновение с собственным телом
     if self.snake:occupies(hx, hy) then
         self.state = STATE_GAME_OVER
         return
@@ -101,5 +106,10 @@ function Game:update(dt)
         self:spawn_food()
     end
 end
+
+Game.STATE_MENU      = STATE_MENU
+Game.STATE_PLAYING   = STATE_PLAYING
+Game.STATE_PAUSED    = STATE_PAUSED
+Game.STATE_GAME_OVER = STATE_GAME_OVER
 
 return Game
