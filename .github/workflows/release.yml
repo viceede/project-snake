@@ -4,11 +4,6 @@
 # Срабатывает при пуше тега вида v* (например, v1.0.0).
 # Собирает snake под Linux (Ubuntu) и Windows (MSYS2/MinGW),
 # затем прикрепляет бинарники к GitHub Release.
-#
-# Что видит игрок:
-#   Releases → Snake v1.0.0 → Assets:
-#     snake-linux-x86_64
-#     snake-windows-x86_64.exe
 # ============================================================
 
 name: Release
@@ -56,7 +51,6 @@ jobs:
         run: |
           mkdir -p dist
           cp build/snake dist/snake-linux-x86_64
-          # Копируем скрипты рядом — игра ищет их во время запуска
           cp -r scripts dist/scripts
 
       - name: Упаковка в tar.gz
@@ -72,7 +66,9 @@ jobs:
           path: dist/snake-linux-x86_64.tar.gz
 
   # ----------------------------------------------------------
-  # Сборка под Windows (MSYS2 + MinGW64)
+  # Сборка под Windows (MSYS2 + MinGW64).
+  # Используем zip вместо 7z — пакет zip ставится стабильно
+  # и утилита всегда в PATH.
   # ----------------------------------------------------------
   build-windows:
     name: Build Windows binary
@@ -93,37 +89,53 @@ jobs:
             mingw-w64-x86_64-make
             mingw-w64-x86_64-SDL2
             mingw-w64-x86_64-pkg-config
-            curl
+            zip
+
+      - name: Диагностика окружения
+        shell: msys2 {0}
+        run: |
+          which cmake
+          which mingw32-make
+          which gcc
+          which zip
 
       - name: Загрузка minilua.h
+        shell: msys2 {0}
         run: |
           mkdir -p third_party
           curl -L -o third_party/minilua.h \
             https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
 
-      - name: Конфигурация и сборка
+      - name: Конфигурация
+        shell: msys2 {0}
         run: |
           cmake -S . -B build \
-            -G "MinGW Makefiles" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_MAKE_PROGRAM=mingw32-make \
-            -DCMAKE_PREFIX_PATH=/mingw64 \
-            -DSNAKE_BUILD_TESTS=OFF
-          cmake --build build -j
+                -G "MinGW Makefiles" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_MAKE_PROGRAM=mingw32-make \
+                -DCMAKE_PREFIX_PATH=/mingw64 \
+                -DSNAKE_BUILD_TESTS=OFF
+
+      - name: Сборка
+        shell: msys2 {0}
+        run: cmake --build build -j
 
       - name: Подготовка артефакта
+        shell: msys2 {0}
         run: |
           mkdir -p dist
           cp build/snake.exe dist/snake-windows-x86_64.exe
           cp -r scripts dist/scripts
-          # Копируем SDL2.dll — без неё игра не запустится
-          cp /mingw64/bin/SDL2.dll dist/ || true
+          # Копируем SDL2.dll — без неё exe не запустится
+          cp /mingw64/bin/SDL2.dll dist/ || \
+            cp /mingw64/bin/libSDL2-2.0-0.dll dist/SDL2.dll || true
 
       - name: Упаковка в ZIP
+        shell: msys2 {0}
         run: |
           cd dist
-          7z a snake-windows-x86_64.zip \
-             snake-windows-x86_64.exe SDL2.dll scripts
+          zip -r snake-windows-x86_64.zip \
+              snake-windows-x86_64.exe SDL2.dll scripts
 
       - name: Загрузка артефакта
         uses: actions/upload-artifact@v4
