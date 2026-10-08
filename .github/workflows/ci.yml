@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ---- Сборка и тестирование под Linux ----
+  linux:
+    name: Linux (GCC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка зависимостей
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake \
+            libsdl2-dev libsdl2-ttf-dev \
+            clang llvm
+
+      - name: Загрузка minilua.h
+        run: |
+          mkdir -p third_party
+          if [ ! -f third_party/minilua.h ]; then
+            curl -L -o third_party/minilua.h \
+              https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
+          fi
+
+      - name: Конфигурация
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAKE_BUILD_TESTS=ON
+
+      - name: Сборка
+        run: cmake --build build -j$(nproc)
+
+      - name: Тесты
+        run: cd build && ctest --output-on-failure
+
+  # ---- Сборка и тестирование под Linux с Clang + ASan ----
+  linux-asan:
+    name: Linux (Clang + ASan/UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка зависимостей
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake \
+            libsdl2-dev libsdl2-ttf-dev
+
+      - name: Загрузка minilua.h
+        run: |
+          mkdir -p third_party
+          curl -L -o third_party/minilua.h \
+            https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
+
+      - name: Конфигурация
+        env:
+          CC: clang
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
+                -DSNAKE_BUILD_TESTS=ON -DSNAKE_ENABLE_ASAN=ON
+
+      - name: Сборка
+        run: cmake --build build -j$(nproc)
+
+      - name: Тесты
+        run: cd build && ctest --output-on-failure
+
+  # ---- Сборка под Windows (MinGW) ----
+  windows:
+    name: Windows (MinGW)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-SDL2
+            make
+
+      - name: Загрузка minilua.h
+        run: |
+          mkdir -p third_party
+          curl -L -o third_party/minilua.h \
+            https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
+
+      - name: Конфигурация
+        run: cmake -S . -B build -G "MinGW Makefiles" -DSNAKE_BUILD_TESTS=ON
+
+      - name: Сборка
+        run: cmake --build build -j
+
+      - name: Тесты
+        run: cd build && ctest --output-on-failure
+
+  # ---- Фаззинг ----
+  fuzz:
+    name: Fuzzing (short run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка зависимостей
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libsdl2-dev
+
+      - name: Загрузка minilua.h
+        run: |
+          mkdir -p third_party
+          curl -L -o third_party/minilua.h \
+            https://raw.githubusercontent.com/edubart/minilua/main/minilua.h
+
+      - name: Конфигурация
+        env:
+          CC: clang
+        run: |
+          cmake -S . -B build-fuzz \
+                -DSNAKE_BUILD_FUZZ=ON \
+                -DSNAKE_BUILD_TESTS=OFF \
+                -DCMAKE_C_COMPILER=clang
+
+      - name: Сборка
+        run: cmake --build build-fuzz -j$(nproc)
+
+      - name: Фаззинг (60 секунд на цель)
+        run: |
+          ./build-fuzz/fuzz_script_load -max_total_time=60
+          ./build-fuzz/fuzz_input_parser -max_total_time=60
