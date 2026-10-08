@@ -20,13 +20,16 @@ out/
 snake
 snake.exe
 
-# Временные файлы CMake
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-Makefile
+# Временные файлы CMake — только внутри каталогов сборки.
+# Ведущий слэш и префикс build* гарантируют, что
+# рукописный Makefile и config.mk в корне не игнорируются.
+/build*/CMakeCache.txt
+/build*/CMakeFiles/
+/build*/cmake_install.cmake
+/build*/Makefile
+/build*/cmake_install.cmake
+/build*/compile_commands.json
 compile_commands.json
-*.cmake
 
 # Среда разработки
 .vscode/
