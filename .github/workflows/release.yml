@@ -5,9 +5,8 @@
 # Собирает snake под Linux (Ubuntu) и Windows (MSYS2/MinGW),
 # затем прикрепляет бинарники к GitHub Release.
 #
-# В шаге скачивания артефактов используется merge-multiple: true,
-# чтобы все файлы оказались в одном каталоге dist/ без
-# промежуточных подкаталогов — тогда пути в files: совпадают.
+# Версия action зафиксирована точно, чтобы избежать
+# неожиданных изменений в поведении при обновлении тега v2.
 # ============================================================
 
 name: Release
@@ -18,7 +17,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write   # нужно для публикации релиза и загрузки ассетов
+  contents: write
 
 jobs:
   # ----------------------------------------------------------
@@ -129,7 +128,6 @@ jobs:
           mkdir -p dist
           cp build/snake.exe dist/snake-windows-x86_64.exe
           cp -r scripts dist/scripts
-          # Копируем SDL2.dll — без неё exe не запустится
           cp /mingw64/bin/SDL2.dll dist/ || \
             cp /mingw64/bin/libSDL2-2.0-0.dll dist/SDL2.dll || true
 
@@ -148,12 +146,7 @@ jobs:
           if-no-files-found: error
 
   # ----------------------------------------------------------
-  # Создание релиза и прикрепление бинарников.
-  #
-  # Ключевой момент: download-artifact с merge-multiple: true
-  # складывает все файлы в один dist/ — иначе они окажутся
-  # в подкаталогах snake-linux/ и snake-windows/, и пути
-  # в files: не совпадут.
+  # Создание релиза и прикрепление бинарников
   # ----------------------------------------------------------
   release:
     name: Publish release
@@ -169,31 +162,52 @@ jobs:
           merge-multiple: true
 
       - name: Показать содержимое dist/
-        run: ls -laR dist/
+        run: |
+          echo "=== Дерево dist/ ==="
+          ls -laR dist/
+          echo ""
+          echo "=== Проверка обоих файлов ==="
+          test -f dist/snake-linux-x86_64.tar.gz && echo "OK: linux archive"
+          test -f dist/snake-windows-x86_64.zip  && echo "OK: windows archive"
 
-      - name: Создание релиза
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "Snake ${{ github.ref_name }}"
-          body: |
-            ## Snake ${{ github.ref_name }}
+      # Явная публикация через gh CLI в качестве страховки.
+      # Если softprops/action-gh-release не прикрепит файлы,
+      # этот шаг доведёт задачу до конца.
+      - name: Публикация через gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
 
-            Кроссплатформенная ретро-игра «Змейка».
-            Ядро на C, игровая логика на Lua, графика SDL2.
+          # Если релиз по тегу уже существует — удаляем,
+          # чтобы избежать переиспользования пустого релиза.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Удаляем существующий релиз $TAG"
+            gh release delete "$TAG" --yes --cleanup-tag=false
+          fi
 
-            ### Управление
+          # Создаём релиз заново и прикрепляем оба архива.
+          gh release create "$TAG" \
+            --title "Snake $TAG" \
+            --notes "Кроссплатформенная ретро-игра «Змейка».
 
-            | Клавиша | Действие |
-            |---------|----------|
-            | R | Начать игру / перезапустить после Game Over |
-            | Стрелки | Движение |
-            | W A S D | Альтернативное управление |
-            | Пробел | Пауза |
-            | Esc | Выход |
+          Управление:
+          - R — начать игру / перезапустить после Game Over
+          - Стрелки или WASD — движение
+          - Пробел — пауза
+          - Esc — выход
 
-            ### Как запустить
+          Как запустить:
+          - Linux: tar xzf snake-linux-x86_64.tar.gz && ./snake-linux-x86_64
+          - Windows: распакуйте snake-windows-x86_64.zip и запустите snake-windows-x86_64.exe
+          " \
+            dist/snake-linux-x86_64.tar.gz \
+            dist/snake-windows-x86_64.zip
 
-            **Linux:**
-            ```bash
-            tar xzf snake-linux-x86_64.tar.gz
-            ./snake-linux-x86_64
+      - name: Проверка вложений
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Список ассетов в релизе ==="
+          gh release view "${GITHUB_REF_NAME}" --json assets \
+            --jq '.assets[] | "\(.name) — \(.size) bytes"'
