@@ -1,12 +1,15 @@
 # ============================================================
 # release.yml — автоматическая публикация релизов на GitHub.
 #
-# Срабатывает при пуше тега вида v* (например, v1.0.0).
-# Собирает snake под Linux (Ubuntu) и Windows (MSYS2/MinGW),
-# затем прикрепляет бинарники к GitHub Release.
+# Срабатывает двумя способами:
+#   1) автоматически при пуше тега вида v* (например, v1.0.0);
+#   2) вручную через вкладку Actions → Release → Run workflow.
 #
-# Версия action зафиксирована точно, чтобы избежать
-# неожиданных изменений в поведении при обновлении тега v2.
+# Собирает snake под Linux (Ubuntu) и Windows (MSYS2/MinGW),
+# затем создаёт GitHub Release и прикрепляет к нему бинарники.
+#
+# Публикация выполняется через gh CLI — он надёжнее принимает
+# пути к файлам, чем softprops/action-gh-release.
 # ============================================================
 
 name: Release
@@ -15,6 +18,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Существующий тег, для которого создаётся релиз (например, v1.0.0)'
+        required: true
+        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -155,6 +164,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Определение целевого тега
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Целевой тег: $TAG"
+
+      - name: Проверка существования тега
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.target.outputs.tag }}"
+          if ! git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "Ошибка: тег $TAG не существует в репозитории"
+            echo "Создайте его командой: git tag -a $TAG -m '...' && git push origin $TAG"
+            exit 1
+          fi
+          echo "OK: тег $TAG найден"
+
       - name: Скачивание артефактов
         uses: actions/download-artifact@v4
         with:
@@ -170,14 +202,11 @@ jobs:
           test -f dist/snake-linux-x86_64.tar.gz && echo "OK: linux archive"
           test -f dist/snake-windows-x86_64.zip  && echo "OK: windows archive"
 
-      # Явная публикация через gh CLI в качестве страховки.
-      # Если softprops/action-gh-release не прикрепит файлы,
-      # этот шаг доведёт задачу до конца.
-      - name: Публикация через gh CLI
+      - name: Публикация релиза через gh CLI
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${{ steps.target.outputs.tag }}"
 
           # Если релиз по тегу уже существует — удаляем,
           # чтобы избежать переиспользования пустого релиза.
@@ -186,21 +215,34 @@ jobs:
             gh release delete "$TAG" --yes --cleanup-tag=false
           fi
 
-          # Создаём релиз заново и прикрепляем оба архива.
+          echo "Создаём релиз $TAG и прикрепляем ассеты..."
           gh release create "$TAG" \
             --title "Snake $TAG" \
             --notes "Кроссплатформенная ретро-игра «Змейка».
+          Ядро на C, игровая логика на Lua, графика SDL2.
 
-          Управление:
-          - R — начать игру / перезапустить после Game Over
-          - Стрелки или WASD — движение
-          - Пробел — пауза
-          - Esc — выход
+          ### Управление
 
-          Как запустить:
-          - Linux: tar xzf snake-linux-x86_64.tar.gz && ./snake-linux-x86_64
-          - Windows: распакуйте snake-windows-x86_64.zip и запустите snake-windows-x86_64.exe
-          " \
+          | Клавиша | Действие |
+          |---------|----------|
+          | R | Начать игру / перезапустить после Game Over |
+          | Стрелки | Движение |
+          | W A S D | Альтернативное управление |
+          | Пробел | Пауза |
+          | Esc | Выход |
+
+          ### Как запустить
+
+          **Linux:**
+          \`\`\`bash
+          tar xzf snake-linux-x86_64.tar.gz
+          ./snake-linux-x86_64
+          \`\`\`
+          Требуется SDL2: \`sudo apt install libsdl2-2.0-0\`.
+
+          **Windows:**
+          Распакуйте \`snake-windows-x86_64.zip\` и запустите
+          \`snake-windows-x86_64.exe\`. \`SDL2.dll\` лежит рядом." \
             dist/snake-linux-x86_64.tar.gz \
             dist/snake-windows-x86_64.zip
 
@@ -208,6 +250,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "=== Список ассетов в релизе ==="
-          gh release view "${GITHUB_REF_NAME}" --json assets \
-            --jq '.assets[] | "\(.name) — \(.size) bytes"'
+          TAG="${{ steps.target.outputs.tag }}"
+          echo "=== Ассеты в релизе $TAG ==="
+          gh release view "$TAG" --json assets \
+            --jq '.assets[] | "  \(.name) — \(.size) bytes"'
