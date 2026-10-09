@@ -1,5 +1,8 @@
 # Змейка — кроссплатформенная ретро-игра
 
+[![CI](https://github.com/viceede/project-snake/actions/workflows/ci.yml/badge.svg)](https://github.com/viceede/project-snake/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/viceede/project-snake)](https://github.com/viceede/project-snake/releases/latest)
+
 Семестровый проект по курсу «Архитектура вычислительных систем».
 Классическая «Змейка» с низкоуровневым ядром на **C** и платформо-независимой
 игровой логикой на **Lua**.
@@ -22,6 +25,37 @@
 
 Такое разделение позволяет запускать одну и ту же игру на Linux, Windows
 и в браузере, меняя только бэкенд.
+
+---
+
+## Готовые сборки
+
+Если не хотите собирать игру из исходников, скачайте готовый бинарник
+на странице [Releases](https://github.com/viceede/project-snake/releases/latest).
+
+| Платформа | Файл | Что внутри |
+|---|---|---|
+| Linux (x86_64) | `snake-linux-x86_64.tar.gz` | бинарник и `scripts/` |
+| Windows (x86_64) | `snake-windows-x86_64.zip` | `.exe`, `SDL2.dll`, `scripts/` |
+
+**Linux:**
+
+```bash
+tar xzf snake-linux-x86_64.tar.gz
+./snake-linux-x86_64
+```
+
+Требуется установленный SDL2:
+
+```bash
+sudo apt install libsdl2-2.0-0
+```
+
+**Windows:**
+
+Распакуйте `snake-windows-x86_64.zip` и запустите
+`snake-windows-x86_64.exe`. `SDL2.dll` уже лежит рядом — дополнительно
+ничего ставить не нужно.
 
 ---
 
@@ -99,8 +133,8 @@ make run        # запустить игру
 Первая сборка на чистом клоне:
 
 ```bash
-git clone <repo-url> snake-project
-cd snake-project
+git clone https://github.com/viceede/project-snake.git
+cd project-snake
 make deps       # установить системные зависимости (Linux/WSL)
 make build
 make run
@@ -262,13 +296,13 @@ make web EMSDK_DIR=/opt/emsdk
 
 ## Управление
 
-| Клавиша    | Действие                                            |
-|------------|-----------------------------------------------------|
-| R          | В меню — начать игру; после Game Over — заново      |
-| ← ↑ → ↓    | Изменение направления движения (только в игре)      |
-| W A S D    | Альтернативное управление (только в игре)           |
-| Пробел     | Пауза / продолжить                                  |
-| Esc        | Выход                                               |
+| Клавиша    | Действие                                            | Когда работает |
+|------------|-----------------------------------------------------|----------------|
+| R          | Начать игру / перезапустить после Game Over         | menu, paused, game_over |
+| Стрелки    | Изменение направления движения                      | playing |
+| W A S D    | Альтернативное управление                           | playing |
+| Пробел     | Пауза / продолжить                                  | playing, paused |
+| Esc        | Выход                                               | в любом состоянии |
 
 ---
 
@@ -343,6 +377,23 @@ make fuzz FUZZ_TIME=120   # 2 минуты на каждую цель
 
 ---
 
+## Непрерывная интеграция и релизы
+
+При каждом пуше в `main` запускаются четыре workflow в GitHub Actions:
+
+- **Linux (GCC)** — сборка и прогон тестов;
+- **Linux (Clang + ASan/UBSan)** — проверка на утечки и UB;
+- **Windows (MinGW)** — кросс-платформенная сборка и тесты;
+- **Fuzzing** — короткий прогон libFuzzer.
+
+При пуше тега вида `v*` (например, `v1.0.0`) запускается workflow
+**Release**, который собирает бинарники для Linux и Windows
+и публикует их на странице **Releases** с описанием и инструкциями
+по запуску. Тот же workflow можно запустить вручную: **Actions** →
+**Release** → **Run workflow**.
+
+---
+
 ## Структура репозитория
 
 ```
@@ -374,7 +425,8 @@ make fuzz FUZZ_TIME=120   # 2 минуты на каждую цель
 ├── third_party/
 │   └── minilua.h          # Однофайловая сборка Lua (скачивается make setup)
 ├── .github/workflows/
-│   └── ci.yml             # CI: Linux + Windows + ASan + фаззинг
+│   ├── ci.yml             # CI: Linux + Windows + ASan + фаззинг
+│   └── release.yml        # Публикация релизов по тегу v*
 ├── CMakeLists.txt         # CMake-описание сборки
 ├── Makefile               # Единая точка входа с алиасами
 ├── config.mk              # Конфигурация: пути, пакеты, флаги
